@@ -1,0 +1,254 @@
+:root {
+  --background: #ffffff;
+  --foreground: #2b2523;
+  --muted: #8b807a;
+  --line: #eadfd8;
+  --red: #dc6f7a;
+  --ink: #3a302d;
+  --soft: #fff9f3;
+  --pink: #ffe9ef;
+  --border: #75635d;
+  --shadow: rgba(91, 70, 62, 0.18);
+  --soft-shadow: rgba(91, 70, 62, 0.1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--soft);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.chatbox-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 20px;
+  gap: 16px;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: #ffffff;
+  font-weight: 900;
+}
+
+.brand strong {
+  display: block;
+  font-size: 15px;
+}
+
+.brand small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.language,
+.reset-button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.language.active {
+  background: var(--ink);
+  color: #ffffff;
+}
+
+.chat-window {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: #ffffff;
+  box-shadow: 0 10px 30px var(--soft-shadow);
+  overflow: hidden;
+}
+
+.message-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 320px;
+}
+
+.message-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 85%;
+}
+
+.message-row.user {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--pink);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.message-row.user .avatar {
+  background: var(--ink);
+  color: #ffffff;
+}
+
+.message-bubble {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--soft);
+  padding: 10px 14px;
+}
+
+.message-row.user .message-bubble {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #ffffff;
+}
+
+.message-bubble p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.limit-notice {
+  margin: 0;
+  padding: 8px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--soft);
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--line);
+  background: #ffffff;
+}
+
+.composer label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.composer input {
+  min-width: 0;
+  min-height: 48px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 16px;
+  background: var(--soft);
+}
+
+.composer .send-button {
+  min-width: 76px;
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--ink);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.composer-meta {
+  padding: 0 20px 12px;
+  text-align: right;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.ethics-card {
+  margin: 0 20px 20px;
+  padding: 14px;
+  border-radius: 16px;
+  background: var(--ink);
+}
+
+.ethics-card p {
+  margin: 0;
+  color: #f4ede9;
+  font-size: 12px;
+  line-height: 1.6;
+}

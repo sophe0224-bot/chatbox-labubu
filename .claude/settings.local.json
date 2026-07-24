@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c ' *)",
+      "Bash(python3 build_new_entries.py)",
+      "Bash(python3 merge_entries.py)"
+    ]
+  }
+}
