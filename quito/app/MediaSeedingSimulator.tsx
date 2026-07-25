@@ -26,15 +26,34 @@ const STOP_WORDS = new Set([
 ]);
 
 function terms(value: string): string[] {
-  return value
+  const expanded = value
+    .replace(/谁创造|创作者|作者/g, " creator ")
+    .replace(/起源|来源|故事/g, " origin story ")
+    .replace(/盲盒/g, " blind box ")
+    .replace(/稀缺|限量|缺货/g, " scarcity limited ")
+    .replace(/转售|二手|炒价/g, " resale price ")
+    .replace(/假货|仿品/g, " counterfeit fake ")
+    .replace(/明星|名人/g, " celebrity ")
+    .replace(/丽莎/g, " Lisa ")
+    .replace(/时尚|穿搭/g, " fashion style ")
+    .replace(/上瘾|心理/g, " psychology reinforcement ")
+    .replace(/过度消费|浪费/g, " overconsumption waste ");
+
+  return expanded
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .split(/\s+/)
     .filter((word) => word.length > 1 && !STOP_WORDS.has(word));
 }
 
-function retrieveKnowledgeAnswer(query: string, lang: Lang): string {
-  const queryTerms = new Set(terms(query));
+function retrieveKnowledgeAnswer(
+  query: string,
+  lang: Lang,
+  previousQuestion?: string,
+): string {
+  const shortFollowUp = terms(query).length <= 2 && previousQuestion;
+  const searchQuery = shortFollowUp ? `${previousQuestion} ${query}` : query;
+  const queryTerms = new Set(terms(searchQuery));
   let best: KnowledgeEntry | null = null;
   let bestScore = 0;
 
@@ -44,8 +63,8 @@ function retrieveKnowledgeAnswer(query: string, lang: Lang): string {
       (score, word) => score + (queryTerms.has(word) ? 1 : 0),
       0,
     );
-    const phraseBonus = entry.question.toLowerCase().includes(query.toLowerCase())
-      || query.toLowerCase().includes(entry.question.toLowerCase())
+    const phraseBonus = entry.question.toLowerCase().includes(searchQuery.toLowerCase())
+      || searchQuery.toLowerCase().includes(entry.question.toLowerCase())
       ? 3
       : 0;
     const score = overlap + phraseBonus;
@@ -55,10 +74,52 @@ function retrieveKnowledgeAnswer(query: string, lang: Lang): string {
     }
   }
 
-  if (best && bestScore > 0) return best.answer;
+  if (best && bestScore > 0) {
+    return humanizeAnswer(best.answer, query, best.question, lang, Boolean(shortFollowUp));
+  }
   return lang === "zh"
     ? "我暂时没有在已学习的 Labubu 文章中找到足够匹配的信息。你可以换一种问法，或询问 Labubu 的起源、盲盒心理、明星传播、稀缺性、转售或过度消费。"
     : "I could not find a strong match in the supplied Labubu articles. Try asking about Labubu's origins, blind-box psychology, celebrity influence, scarcity, resale, fashion, or overconsumption.";
+}
+
+function humanizeAnswer(
+  answer: string,
+  query: string,
+  matchedQuestion: string,
+  lang: Lang,
+  continued: boolean,
+): string {
+  const score = [...query].reduce((total, char) => total + char.charCodeAt(0), 0);
+  const openings = lang === "zh"
+    ? continued
+      ? ["对，顺着刚才的话题来说，", "这个追问很关键。", "继续刚才那一点，"]
+      : ["简单来说，", "这是个很好的问题。", "这里最关键的是："]
+    : continued
+      ? ["Yes—and building on that, ", "That connects directly to the last point. ", "Good follow-up. "]
+      : ["Short answer: ", "The key idea is this: ", "A useful way to see it is: "];
+  const opening = openings[score % openings.length];
+  const topic = matchedQuestion.toLowerCase();
+  const followUp = topic.includes("blind") || topic.includes("secret")
+    ? lang === "zh"
+      ? "你想继续了解盲盒为什么容易让人重复购买吗？"
+      : "Want to look at why the blind-box reveal can lead to repeat buying?"
+    : topic.includes("celebr") || topic.includes("lisa")
+      ? lang === "zh"
+        ? "你想再看看 Lisa 和其他明星是怎样放大这股热潮的吗？"
+        : "Want to explore how Lisa and other celebrities amplified the trend?"
+      : topic.includes("scar") || topic.includes("resale") || topic.includes("fake")
+        ? lang === "zh"
+          ? "要不要接着聊稀缺、转售和假货之间的关系？"
+          : "Would you like to connect this to scarcity, resale prices, and counterfeits?"
+        : topic.includes("consum") || topic.includes("waste") || topic.includes("fomo")
+          ? lang === "zh"
+            ? "你想进一步分析 FOMO 是怎样影响购买决定的吗？"
+            : "Want to unpack how FOMO changes a buying decision?"
+          : lang === "zh"
+            ? "你想从历史、设计，还是收藏心理继续了解？"
+            : "Would you like to go deeper into its history, design, or collector psychology?";
+
+  return `${opening}${answer}\n\n${followUp}`;
 }
 
 const copy = {
@@ -458,7 +519,11 @@ export default function MediaSeedingSimulator() {
       {
         id: `${Date.now()}`,
         question: cleaned,
-        answer: retrieveKnowledgeAnswer(cleaned, lang),
+        answer: retrieveKnowledgeAnswer(
+          cleaned,
+          lang,
+          chatReplies.at(-1)?.question,
+        ),
       },
     ]);
     setQuestion("");
