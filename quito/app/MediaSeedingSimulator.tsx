@@ -1,10 +1,65 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { getOrCreateUserId } from "./lib/anonymous-user";
 import { getTokenSnapshot, logInteraction, TOKEN_BUDGET } from "./lib/interaction-tracker";
+import knowledgeBase from "./lib/Labubu_100_QA.json";
 
 type Lang = "zh" | "en";
+
+type KnowledgeEntry = {
+  question: string;
+  answer: string;
+};
+
+type ChatReply = {
+  id: string;
+  question: string;
+  answer: string;
+};
+
+const STOP_WORDS = new Set([
+  "a", "an", "and", "are", "as", "at", "be", "can", "did", "do", "does",
+  "for", "from", "how", "i", "in", "is", "it", "labubu", "of", "on", "or",
+  "the", "this", "to", "was", "what", "when", "where", "which", "who", "why",
+  "with", "would", "you",
+]);
+
+function terms(value: string): string[] {
+  return value
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 1 && !STOP_WORDS.has(word));
+}
+
+function retrieveKnowledgeAnswer(query: string, lang: Lang): string {
+  const queryTerms = new Set(terms(query));
+  let best: KnowledgeEntry | null = null;
+  let bestScore = 0;
+
+  for (const entry of knowledgeBase as KnowledgeEntry[]) {
+    const questionTerms = terms(entry.question);
+    const overlap = questionTerms.reduce(
+      (score, word) => score + (queryTerms.has(word) ? 1 : 0),
+      0,
+    );
+    const phraseBonus = entry.question.toLowerCase().includes(query.toLowerCase())
+      || query.toLowerCase().includes(entry.question.toLowerCase())
+      ? 3
+      : 0;
+    const score = overlap + phraseBonus;
+    if (score > bestScore) {
+      bestScore = score;
+      best = entry;
+    }
+  }
+
+  if (best && bestScore > 0) return best.answer;
+  return lang === "zh"
+    ? "我暂时没有在已学习的 Labubu 文章中找到足够匹配的信息。你可以换一种问法，或询问 Labubu 的起源、盲盒心理、明星传播、稀缺性、转售或过度消费。"
+    : "I could not find a strong match in the supplied Labubu articles. Try asking about Labubu's origins, blind-box psychology, celebrity influence, scarcity, resale, fashion, or overconsumption.";
+}
 
 const copy = {
   zh: {
@@ -19,6 +74,8 @@ const copy = {
     dashboard: "心理影响仪表盘",
     blueprint: "研究关键词",
     input: "选择一个回复，让模拟继续推进...",
+    askPlaceholder: "输入关于 Labubu 的问题…",
+    askButton: "提问",
     send: "继续",
     reportTitle: "当前研究解释",
     ethical: "说明：这是行为模拟/媒体素养实验，不伪造实时购买、不伪造倒计时，也不把价格作为主要诱因。",
@@ -58,6 +115,8 @@ const copy = {
     dashboard: "Influence dashboard",
     blueprint: "Research keywords",
     input: "Choose a response to continue the simulation...",
+    askPlaceholder: "Ask a question about Labubu…",
+    askButton: "Ask",
     send: "Next",
     reportTitle: "Current research explanation",
     ethical: "Note: this is a behavior simulation and media literacy experiment. It does not fake live purchases, fake countdowns, or use price as the main trigger.",
@@ -312,6 +371,8 @@ export default function MediaSeedingSimulator() {
   const [tokensLeft, setTokensLeft] = useState(TOKEN_BUDGET);
   const [cooldownEndsAt, setCooldownEndsAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [question, setQuestion] = useState("");
+  const [chatReplies, setChatReplies] = useState<ChatReply[]>([]);
   const t = copy[lang];
   const currentSteps = paths[lang];
   const step = currentSteps[activeStep];
@@ -383,6 +444,24 @@ export default function MediaSeedingSimulator() {
   function reset() {
     setActiveStep(0);
     setBoost(0);
+    setQuestion("");
+    setChatReplies([]);
+  }
+
+  function askQuestion(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const cleaned = question.trim();
+    if (!cleaned || blocked) return;
+    track(cleaned);
+    setChatReplies((items) => [
+      ...items,
+      {
+        id: `${Date.now()}`,
+        question: cleaned,
+        answer: retrieveKnowledgeAnswer(cleaned, lang),
+      },
+    ]);
+    setQuestion("");
   }
 
   const messages = [
@@ -472,6 +551,28 @@ export default function MediaSeedingSimulator() {
                 </div>
               </article>
             ))}
+            {chatReplies.map((reply) => (
+              <div className="knowledge-exchange" key={reply.id}>
+                <article className="message-row mind">
+                  <div className="avatar">U</div>
+                  <div className="message-bubble">
+                    <div className="message-meta">
+                      <strong>{lang === "zh" ? "你的问题" : "Your question"}</strong>
+                    </div>
+                    <p>{reply.question}</p>
+                  </div>
+                </article>
+                <article className="message-row system">
+                  <div className="avatar">L</div>
+                  <div className="message-bubble">
+                    <div className="message-meta">
+                      <strong>Labubu Knowledge Base</strong>
+                    </div>
+                    <p>{reply.answer}</p>
+                  </div>
+                </article>
+              </div>
+            ))}
           </div>
 
           <div className="quick-actions">
@@ -499,12 +600,20 @@ export default function MediaSeedingSimulator() {
             </p>
           ) : null}
 
-          <form className="composer">
+          <form className="composer" onSubmit={askQuestion}>
             <button type="button" onClick={() => setActiveStep((value) => Math.max(0, value - 1))}>←</button>
             <label htmlFor="seed-input">message</label>
-            <input id="seed-input" readOnly value={t.input} />
-            <button className="send-button" disabled={blocked} onClick={nextStep} type="button">{t.send}</button>
+            <input
+              id="seed-input"
+              onChange={(event) => setQuestion(event.target.value)}
+              placeholder={t.askPlaceholder}
+              value={question}
+            />
+            <button className="send-button" disabled={blocked || !question.trim()} type="submit">{t.askButton}</button>
           </form>
+          <button className="next-experience" disabled={blocked} onClick={nextStep} type="button">
+            {lang === "zh" ? "继续体验 →" : "Continue experience →"}
+          </button>
         </section>
 
         <aside className="dashboard-panel">
