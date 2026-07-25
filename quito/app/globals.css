@@ -394,6 +394,30 @@ img {
   background-size: 100% 24px, 24px 100%;
 }
 
+.knowledge-exchange {
+  display: contents;
+}
+
+.next-experience {
+  align-self: flex-end;
+  margin: 0 20px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.next-experience:hover {
+  color: var(--foreground);
+}
+
+.next-experience:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .message-row {
   display: grid;
   grid-template-columns: 38px minmax(0, 0.82fr);
