@@ -9,13 +9,21 @@ export function getOrCreateUserId(): string {
   if (typeof window === "undefined") return "";
 
   const existingId = readCookie(USER_ID_KEY) ?? safeLocalStorageGet(USER_ID_KEY);
-  const userId = existingId ?? crypto.randomUUID();
+  const userId = existingId ?? createAnonymousId();
 
   // Re-sync both stores in case one was cleared but not the other.
   writeCookie(USER_ID_KEY, userId, COOKIE_MAX_AGE_DAYS);
   safeLocalStorageSet(USER_ID_KEY, userId);
 
   return userId;
+}
+
+function createAnonymousId(): string {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+
+  return `anon-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
 function readCookie(name: string): string | null {

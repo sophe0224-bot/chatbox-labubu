@@ -1,246 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getOrCreateUserId } from "./lib/anonymous-user";
 import { getTokenSnapshot, logInteraction, TOKEN_BUDGET } from "./lib/interaction-tracker";
+import { LABUBU_SYSTEM_PROMPT } from "./lib/labubu-system-prompt";
 import knowledgeBase from "./lib/Labubu_100_QA.json";
 
 type Lang = "zh" | "en";
-
-type KnowledgeEntry = {
-  question: string;
-  answer: string;
-};
-
-type ChatReply = {
-  id: string;
-  question: string;
-  answer: string;
-};
-
-const STOP_WORDS = new Set([
-  "a", "an", "and", "are", "as", "at", "be", "can", "did", "do", "does",
-  "for", "from", "how", "i", "in", "is", "it", "labubu", "of", "on", "or",
-  "the", "this", "to", "was", "what", "when", "where", "which", "who", "why",
-  "with", "would", "you",
-]);
-
-function terms(value: string): string[] {
-  const expanded = value
-    .replace(/谁创造|创作者|作者/g, " creator ")
-    .replace(/起源|来源|故事/g, " origin story ")
-    .replace(/盲盒/g, " blind box ")
-    .replace(/稀缺|限量|缺货/g, " scarcity limited ")
-    .replace(/转售|二手|炒价/g, " resale price ")
-    .replace(/假货|仿品/g, " counterfeit fake ")
-    .replace(/明星|名人/g, " celebrity ")
-    .replace(/丽莎/g, " Lisa ")
-    .replace(/时尚|穿搭/g, " fashion style ")
-    .replace(/上瘾|心理/g, " psychology reinforcement ")
-    .replace(/过度消费|浪费/g, " overconsumption waste ");
-
-  return expanded
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .split(/\s+/)
-    .filter((word) => word.length > 1 && !STOP_WORDS.has(word));
-}
-
-function retrieveKnowledgeAnswer(
-  query: string,
-  lang: Lang,
-  previousQuestion?: string,
-): string {
-  const adaptiveReply = buildAdaptiveReply(query, lang, previousQuestion);
-  if (adaptiveReply) return adaptiveReply;
-
-  const shortFollowUp = terms(query).length <= 2 && previousQuestion;
-  const searchQuery = shortFollowUp ? `${previousQuestion} ${query}` : query;
-  const queryTerms = new Set(terms(searchQuery));
-  let best: KnowledgeEntry | null = null;
-  let bestScore = 0;
-
-  for (const entry of knowledgeBase as KnowledgeEntry[]) {
-    const questionTerms = terms(entry.question);
-    const overlap = questionTerms.reduce(
-      (score, word) => score + (queryTerms.has(word) ? 1 : 0),
-      0,
-    );
-    const phraseBonus = entry.question.toLowerCase().includes(searchQuery.toLowerCase())
-      || searchQuery.toLowerCase().includes(entry.question.toLowerCase())
-      ? 3
-      : 0;
-    const score = overlap + phraseBonus;
-    if (score > bestScore) {
-      bestScore = score;
-      best = entry;
-    }
-  }
-
-  if (best && bestScore > 0) {
-    return humanizeAnswer(best.answer, query, best.question, lang, Boolean(shortFollowUp));
-  }
-  return lang === "zh"
-    ? "我暂时没有在已学习的 Labubu 文章中找到足够匹配的信息。你可以换一种问法，或询问 Labubu 的起源、盲盒心理、明星传播、稀缺性、转售或过度消费。"
-    : "I could not find a strong match in the supplied Labubu articles. Try asking about Labubu's origins, blind-box psychology, celebrity influence, scarcity, resale, fashion, or overconsumption.";
-}
-
-function buildAdaptiveReply(
-  query: string,
-  lang: Lang,
-  previousQuestion?: string,
-): string | null {
-  const normalized = query.toLowerCase();
-  const joined = `${previousQuestion ?? ""} ${query}`.toLowerCase();
-  const saysNo = /不想|不要|不需要|没兴趣|不喜欢|算了|观望|拒绝|停一下|冷静|not|don't|do not|no |avoid|pass|skip|unsure|wait/.test(normalized);
-  const saysWant = /想要|想买|喜欢|要买|心动|加入|收藏|跟上|落下|怕错过|everyone|friend|friends|want|buy|like|own|join|miss out|left out|fomo/.test(normalized);
-  const social = /朋友|大家|别人|同学|身边|话题|圈子|群体|社群|跟风|落下|everyone|friend|friends|peer|group|community|trend|left out/.test(joined);
-  const budget = /钱|价格|贵|预算|花费|省钱|price|expensive|budget|cost|money|spend/.test(joined);
-  const cute = /可爱|治愈|开心|压力|情绪|cute|comfort|stress|happy|mood/.test(joined);
-  const rare = /隐藏|稀有|限量|缺货|抽中|rare|secret|limited|sold out|low stock/.test(joined);
-  const fake = /假|仿|真假|counterfeit|fake|lafufu/.test(joined);
-  const style = /穿搭|包|风格|搭配|审美|fashion|style|bag|outfit|aesthetic/.test(joined);
-  const origin = /谁|创作|起源|来源|故事|creator|created|origin|story|history/.test(joined);
-
-  if (social && saysNo) {
-    return lang === "zh"
-      ? "你这个回答更像是在识别社交压力，而不是单纯表达“我想买”。当你说“不想被朋友的话题落下”时，真正的驱动力可能是归属感和害怕错过讨论。\n\n可以先问自己一句：如果朋友明天不聊 Labubu 了，我还会想拥有它吗？"
-      : "That answer points more to social pressure than simple desire. Saying you do not want to be left out of your friends' conversation means the driver may be belonging and fear of missing the discussion.\n\nA useful check is: if your friends stopped talking about Labubu tomorrow, would you still want one?";
-  }
-  if (social && saysWant) {
-    return lang === "zh"
-      ? "这更像社会认同在起作用：当身边的人都拥有或讨论 Labubu 时，它会变成加入群体的信号，而不只是一个玩具。\n\n下一步可以区分两件事：你是喜欢 Labubu 本身，还是更想参与朋友之间的话题？"
-      : "That sounds like social proof at work: when people around you own or discuss Labubu, it becomes a signal of belonging, not just a toy.\n\nThe next distinction is whether you like Labubu itself, or whether you mainly want to join the conversation around it.";
-  }
-  if (budget) {
-    return lang === "zh"
-      ? "你的回答已经转向理性决策了。Labubu 的风险不一定是单个价格，而是盲盒、配件、重复款和转售价格叠加后的总花费。\n\n更稳的做法是先设一个上限：如果超过这个预算，就把它当作内容兴趣，而不是购买计划。"
-      : "Your answer moves the conversation toward a more rational decision. The risk with Labubu is often not one single price, but the total cost of blind boxes, accessories, duplicates, and resale markups.\n\nA stronger choice is to set a limit first: past that budget, treat it as content interest rather than a purchase plan.";
-  }
-  if (rare) {
-    return lang === "zh"
-      ? "你提到的是稀缺感触发：隐藏款、限量和缺货会让人感觉机会正在消失。这个机制会提高兴趣，但不一定说明你真的需要它。\n\n可以先暂停一下：你想要的是这个具体款式，还是“抽中稀有款”的刺激？"
-      : "You are pointing to a scarcity trigger: secret editions, limited releases, and low-stock signals make the opportunity feel like it is disappearing. That can raise desire without proving you truly need it.\n\nPause on this: do you want this specific design, or the thrill of getting something rare?";
-  }
-  if (fake) {
-    return lang === "zh"
-      ? "这类担心很实际。越热门、越难买的款式，越容易出现仿品和真假争议；只靠一个外观细节通常不够可靠。\n\n如果你还在犹豫，可以把“能否确认来源”作为是否购买的第一条件。"
-      : "That concern is practical. The more popular and scarce a release becomes, the more likely counterfeits and authenticity disputes appear; one visual clue is usually not enough.\n\nIf you are unsure, make source verification the first condition before buying.";
-  }
-  if (style) {
-    return lang === "zh"
-      ? "你的回答偏向身份表达：Labubu 在这里不是普通玩具，而是包挂、穿搭和审美标签的一部分。\n\n可以继续想：它是否真的适合你的风格，还是只是因为你最近频繁看到别人这样搭配？"
-      : "Your answer leans toward identity expression: Labubu is acting less like a normal toy and more like a bag charm, styling cue, or aesthetic label.\n\nThe useful question is whether it genuinely fits your style, or whether you are responding to seeing the same styling repeatedly.";
-  }
-  if (cute) {
-    return lang === "zh"
-      ? "这说明情绪价值在起作用。可爱、治愈和缓解压力的内容，会让 Labubu 先和心情绑定，再和购买绑定。\n\n这不一定是坏事，但你可以分清楚：我是现在需要一点安慰，还是长期真的想收藏？"
-      : "That shows emotional value is driving the response. Cute, comforting, stress-relief content connects Labubu to mood first, and buying second.\n\nThat is not automatically bad, but it helps to separate the two: do you need comfort right now, or do you genuinely want to collect it long term?";
-  }
-  if (origin) {
-    return lang === "zh"
-      ? "你问的是背景线索。Labubu 原本来自艺术家龙家升的《The Monsters》故事世界，后来通过 Pop Mart 的授权和盲盒体系进入大众收藏市场。\n\n所以它的吸引力同时来自角色故事、设计风格和商业传播。"
-      : "You are asking about background. Labubu began in artist Kasing Leung's The Monsters story world, then reached a mass collecting audience through Pop Mart licensing and blind-box distribution.\n\nSo its appeal comes from character lore, visual design, and commercial media circulation at the same time.";
-  }
-  if (saysNo) {
-    return lang === "zh"
-      ? "你的回答是在给冲动降温。这里最重要的不是立刻判断“买不买”，而是看清是哪一种内容影响了你：情绪、身份、社群，还是稀缺感。\n\n如果你已经在观望，说明你正在把欲望重新拉回选择权。"
-      : "Your answer is cooling down the impulse. The key is not to decide immediately whether to buy, but to identify what influenced you: emotion, identity, community, or scarcity.\n\nIf you are already waiting, you are moving the decision back into your own control.";
-  }
-  if (saysWant) {
-    return lang === "zh"
-      ? "你表达的是兴趣上升。下一步不要只问“我想不想要”，而要问“我为什么现在更想要”：是因为它可爱、适合我的风格、朋友也在聊，还是因为担心之后买不到？"
-      : "You are describing rising interest. The next step is not only asking whether you want it, but why you want it more now: because it is cute, fits your style, your friends are discussing it, or you worry it may disappear later.";
-  }
-
-  return null;
-}
-
-function humanizeAnswer(
-  answer: string,
-  query: string,
-  matchedQuestion: string,
-  lang: Lang,
-  continued: boolean,
-): string {
-  const score = [...query].reduce((total, char) => total + char.charCodeAt(0), 0);
-  const displayAnswer = lang === "zh"
-    ? localizeKnowledgeAnswer(answer, matchedQuestion)
-    : answer;
-  const openings = lang === "zh"
-    ? continued
-      ? ["对，顺着刚才的话题来说，", "这个追问很关键。", "继续刚才那一点，"]
-      : ["简单来说，", "这是个很好的问题。", "这里最关键的是："]
-    : continued
-      ? ["Yes—and building on that, ", "That connects directly to the last point. ", "Good follow-up. "]
-      : ["Short answer: ", "The key idea is this: ", "A useful way to see it is: "];
-  const opening = openings[score % openings.length];
-  const topic = matchedQuestion.toLowerCase();
-  const followUp = topic.includes("blind") || topic.includes("secret")
-    ? lang === "zh"
-      ? "你想继续了解盲盒为什么容易让人重复购买吗？"
-      : "Want to look at why the blind-box reveal can lead to repeat buying?"
-    : topic.includes("celebr") || topic.includes("lisa")
-      ? lang === "zh"
-        ? "你想再看看 Lisa 和其他明星是怎样放大这股热潮的吗？"
-        : "Want to explore how Lisa and other celebrities amplified the trend?"
-      : topic.includes("scar") || topic.includes("resale") || topic.includes("fake")
-        ? lang === "zh"
-          ? "要不要接着聊稀缺、转售和假货之间的关系？"
-          : "Would you like to connect this to scarcity, resale prices, and counterfeits?"
-        : topic.includes("consum") || topic.includes("waste") || topic.includes("fomo")
-          ? lang === "zh"
-            ? "你想进一步分析错失恐惧是怎样影响购买决定的吗？"
-            : "Want to unpack how FOMO changes a buying decision?"
-          : lang === "zh"
-            ? "你想从历史、设计，还是收藏心理继续了解？"
-            : "Would you like to go deeper into its history, design, or collector psychology?";
-
-  return `${opening}${displayAnswer}\n\n${followUp}`;
-}
-
-function localizeKnowledgeAnswer(answer: string, matchedQuestion: string): string {
-  const source = `${matchedQuestion} ${answer}`.toLowerCase();
-
-  if (source.includes("creator") || source.includes("kasing") || source.includes("leung")) {
-    return "Labubu 由艺术家龙家升创作。他出生于香港、成长于荷兰，插画背景和欧洲民间故事经验共同塑造了 Labubu 带有童话感、森林感和一点怪诞气质的视觉风格。";
-  }
-  if (source.includes("the monsters") || source.includes("fictional world") || source.includes("nordic")) {
-    return "Labubu 属于龙家升创作的《The Monsters》世界。这个世界受北欧民间传说影响，常出现森林、精灵和带一点暗黑童话感的角色，所以 Labubu 看起来既可爱又有一点调皮怪异。";
-  }
-  if (source.includes("pop mart") || source.includes("licensing") || source.includes("retail") || source.includes("vending")) {
-    return "Pop Mart 的作用是把原本偏小众的艺术角色商业化、规模化，并通过门店、机器、线上内容和盲盒系列把 Labubu 推向更大的收藏市场。";
-  }
-  if (source.includes("blind") || source.includes("secret") || source.includes("duplicate") || source.includes("dopamine") || source.includes("gambling")) {
-    return "盲盒机制会把购买从单纯选择商品变成等待揭晓的过程。隐藏款、重复款和不确定结果会放大期待感，也容易让人为了补齐系列或抽到稀有款而反复购买。";
-  }
-  if (source.includes("scarcity") || source.includes("limited") || source.includes("queue") || source.includes("lottery") || source.includes("fomo")) {
-    return "稀缺信息会让人更担心错过机会。排队、抽签、限量发售和低库存提示都会提高感知价值，但也可能让购买决定从真实喜欢变成被紧迫感推动。";
-  }
-  if (source.includes("resale") || source.includes("secondary market") || source.includes("counterfeit") || source.includes("fake")) {
-    return "当热门款难买时，二级市场价格会上升，仿品也更容易出现。资料提醒用户不要只靠单一外观线索判断真假，也要注意转售炒价会反过来强化稀缺感。";
-  }
-  if (source.includes("lisa") || source.includes("celebrity") || source.includes("blackpink") || source.includes("influencer")) {
-    return "明星和创作者让 Labubu 从玩具变成可见的风格符号。Lisa 等公众人物的展示会让粉丝觉得它更真实、更时髦，也更像一种可以参与的社群趋势。";
-  }
-  if (source.includes("social media") || source.includes("tiktok") || source.includes("unboxing") || source.includes("algorithm")) {
-    return "社交媒体会把开箱、穿搭、反应和讨论变成连续内容。算法反复推送相似内容时，用户容易产生“大家都在拥有它”的印象，从而放大兴趣和跟风压力。";
-  }
-  if (source.includes("identity") || source.includes("fashion") || source.includes("handbag") || source.includes("gen z") || source.includes("community")) {
-    return "Labubu 的吸引力不只来自玩具本身，也来自身份表达。把它挂在包上、搭配衣服或加入社群讨论，会让它成为审美、圈层和个人风格的一部分。";
-  }
-  if (source.includes("custom") || source.includes("accessories") || source.includes("bag charm")) {
-    return "换装、配件和包挂使用方式会让 Labubu 更个人化。用户不只是展示一个成品，而是在通过搭配、携带和改造表达自己的风格。";
-  }
-  if (source.includes("overconsumption") || source.includes("waste") || source.includes("budget") || source.includes("sustainability") || source.includes("anti-haul")) {
-    return "资料提醒要警惕过度消费：低单价可能掩盖累计花费，重复款也会带来浪费。等待一段时间、设定预算、参加低消费的社群活动，都能减少冲动购买。";
-  }
-  if (source.includes("ugly-cute") || source.includes("visual") || source.includes("teeth") || source.includes("mischievous")) {
-    return "Labubu 的标志性特征包括尖耳朵、大眼睛、毛绒身体和露齿笑。它同时有可爱和怪诞两种信号，因此更容易引发好奇、讨论和记忆点。";
-  }
-
-  return "资料主要说明：Labubu 的热度来自角色设计、社交媒体传播、盲盒机制、社群认同和稀缺感共同作用。理解这些因素，可以帮助用户区分真实喜欢和被趋势推动的购买欲。";
-}
+type ChatMessage = { id: number; role: "user" | "assistant"; text: string };
 
 const copy = {
   zh: {
@@ -254,13 +21,10 @@ const copy = {
     leftTitle: "体验路径",
     dashboard: "心理影响仪表盘",
     blueprint: "研究关键词",
-    input: "选择一个回复，让模拟继续推进...",
-    askPlaceholder: "输入关于 Labubu 的问题…",
-    askButton: "提问",
-    send: "继续",
+    input: "告诉我：你为什么开始想要 Labubu？",
+    send: "发送",
     reportTitle: "当前研究解释",
     ethical: "说明：这是行为模拟/媒体素养实验，不伪造实时购买、不伪造倒计时，也不把价格作为主要诱因。",
-    knowledgeTitle: "Labubu 知识库",
     tokensLabel: (n: number) => `剩余提问次数：${n}`,
     cooldownMessage: (time: string) => `提问次数已用完，请等待 ${time} 后重试。`,
     sources: {
@@ -278,11 +42,13 @@ const copy = {
       fomo: "错失恐惧",
     },
     actions: [
-      { label: "选择 A", delta: 8 },
-      { label: "选择 B", delta: 10 },
-      { label: "收藏线索", delta: 12 },
-      { label: "保持观望", delta: -4 },
+      { label: "朋友都有，我也想要", delta: 10 },
+      { label: "我觉得它又丑又可爱", delta: 8 },
+      { label: "它太贵了，但我还是想买", delta: 12 },
+      { label: "我怕错过限量款", delta: 14 },
     ],
+    you: "你",
+    assistant: "Labubu Guide",
     keywords: ["情感价值", "身份建构", "归属感", "社会认同", "从众效应", "稀缺感", "错失恐惧"],
   },
   en: {
@@ -296,13 +62,10 @@ const copy = {
     leftTitle: "Experience path",
     dashboard: "Influence dashboard",
     blueprint: "Research keywords",
-    input: "Choose a response to continue the simulation...",
-    askPlaceholder: "Ask a question about Labubu…",
-    askButton: "Ask",
-    send: "Next",
+    input: "Tell me: why did you start wanting a Labubu?",
+    send: "Send",
     reportTitle: "Current research explanation",
     ethical: "Note: this is a behavior simulation and media literacy experiment. It does not fake live purchases, fake countdowns, or use price as the main trigger.",
-    knowledgeTitle: "Labubu Knowledge Base",
     tokensLabel: (n: number) => `Tokens left: ${n}`,
     cooldownMessage: (time: string) => `Token limit reached. Please wait ${time}.`,
     sources: {
@@ -320,11 +83,13 @@ const copy = {
       fomo: "FOMO",
     },
     actions: [
-      { label: "Pick A", delta: 8 },
-      { label: "Pick B", delta: 10 },
-      { label: "Save clue", delta: 12 },
-      { label: "Stay unsure", delta: -4 },
+      { label: "My friends all have one", delta: 10 },
+      { label: "It is ugly-cute, but I keep looking", delta: 8 },
+      { label: "It is expensive, but I still want it", delta: 12 },
+      { label: "I am afraid the limited one will sell out", delta: 14 },
     ],
+    you: "You",
+    assistant: "Labubu Guide",
     keywords: ["Emotional value", "Identity construction", "Belonging", "Social proof", "Bandwagon effect", "Scarcity", "FOMO"],
   },
 };
@@ -546,6 +311,77 @@ const paths = {
   ],
 };
 
+const caseStudy = {
+  zh: {
+    eyebrow: "互动媒体素养案例研究",
+    heroTitle: "我们为什么会突然想要一个 Labubu？",
+    heroBody:
+      "社交媒体不会只展示一个玩具。它把可爱、身份表达、社群认同和稀缺感串联起来，让兴趣逐步变成欲望。这个 Chatbox 让用户亲自看见这条影响路径。",
+    primaryCta: "开始 30 秒体验",
+    secondaryCta: "了解研究过程",
+    contextTitle: "Labubu 是什么？",
+    contextBody:
+      "Labubu 是一个以“怪萌”外形、盲盒机制和收藏文化走红的角色 IP。它也常作为包挂、穿搭符号和社交内容出现，因此不只是玩具，也是一种身份与社群语言。",
+    problemTitle: "问题",
+    problemBody:
+      "当推荐流、开箱视频、朋友动态与限量提示同时出现时，人们很难分辨：我是真的喜欢，还是正在被环境推动？传统媒体素养材料往往解释概念，却很少让用户体验影响发生的过程。",
+    audienceTitle: "为谁设计",
+    audienceBody:
+      "主要用户是活跃于 TikTok、小红书和 Instagram 的年轻消费者与收藏者；相关利益方还包括家长、教育者、品牌和内容平台。",
+    insightTitle: "核心洞察",
+    insightBody:
+      "欲望通常不是由单一广告触发，而是沿着“情绪价值 → 身份匹配 → 社群归属 → FOMO”逐层增强。把这条路径可视化，能帮助用户在行动前重新获得判断空间。",
+    solutionTitle: "设计回应",
+    solutionBody:
+      "一个双语、非销售导向的互动模拟器。用户通过七个阶段体验内容吸引、个性匹配、社会认同与稀缺提示，并在右侧仪表盘看到每种心理影响如何变化。",
+    marketTitle: "商业与营销价值",
+    marketBody:
+      "该原型把营销研究转化为可体验的消费者洞察工具，可用于品牌策略课堂、活动前测、青年媒体素养教育和负责任营销工作坊。差异点不是推动转化，而是解释转化。",
+    impactTitle: "预期影响",
+    impactBody:
+      "帮助用户为冲动命名、区分喜欢与跟风，并在购买前形成更清晰的自我提问；同时帮助营销与设计团队理解情绪、身份和社群如何共同塑造需求。",
+    nextTitle: "下一步",
+    nextItems: ["与目标用户进行 5–8 次可用性测试", "验证影响仪表盘是否容易理解", "补充访谈与市场数据", "比较体验前后的购买意愿与媒体素养变化"],
+    processLabel: "从观察到设计",
+    process: ["观察", "问题", "研究", "洞察", "原型", "反思"],
+    prototypeLabel: "互动原型",
+  },
+  en: {
+    eyebrow: "Interactive media literacy case study",
+    heroTitle: "Why do we suddenly want a Labubu?",
+    heroBody:
+      "Social media rarely shows us just a toy. It connects cuteness, identity, belonging, and scarcity until attention becomes desire. This chatbox makes that influence path visible through experience.",
+    primaryCta: "Start the 30-second experience",
+    secondaryCta: "See the research story",
+    contextTitle: "What is Labubu?",
+    contextBody:
+      "Labubu is an “ugly-cute” character IP popularized through blind-box collecting. It also appears as a bag charm, styling signal, and social-media object—making it both a toy and a language of identity and community.",
+    problemTitle: "The problem",
+    problemBody:
+      "When recommendation feeds, unboxing videos, friend activity, and limited-release cues appear together, it becomes hard to tell: do I truly like this, or is the environment moving me? Traditional media-literacy materials explain concepts but rarely let people feel the process.",
+    audienceTitle: "Who it serves",
+    audienceBody:
+      "The primary audience is young consumers and collectors active on TikTok, Xiaohongshu, and Instagram. Stakeholders also include families, educators, brands, and content platforms.",
+    insightTitle: "Key insight",
+    insightBody:
+      "Desire is rarely triggered by one ad. It often grows through emotional value, identity fit, community belonging, and FOMO. Visualizing that progression gives users space to reflect before acting.",
+    solutionTitle: "Design response",
+    solutionBody:
+      "A bilingual, non-commerce simulation. Across seven stages, users experience content attraction, personality matching, social proof, and scarcity cues while an influence dashboard reveals how each psychological factor changes.",
+    marketTitle: "Business and marketing value",
+    marketBody:
+      "The prototype turns marketing research into an experiential consumer-insight tool for strategy classes, campaign pretests, youth media-literacy programs, and responsible-marketing workshops. Its differentiation is explaining conversion—not maximizing it.",
+    impactTitle: "Expected impact",
+    impactBody:
+      "Help users name an impulse, separate genuine liking from social pressure, and ask better questions before buying—while helping marketers and designers understand how emotion, identity, and community shape demand.",
+    nextTitle: "Next steps",
+    nextItems: ["Run 5–8 usability sessions with target users", "Test whether the influence dashboard is easy to understand", "Add interview and market evidence", "Compare purchase intent and media literacy before and after the experience"],
+    processLabel: "From observation to design",
+    process: ["Observe", "Problem", "Research", "Insight", "Prototype", "Reflect"],
+    prototypeLabel: "Interactive prototype",
+  },
+};
+
 export default function MediaSeedingSimulator() {
   const [lang, setLang] = useState<Lang>("en");
   const [activeStep, setActiveStep] = useState(0);
@@ -554,9 +390,12 @@ export default function MediaSeedingSimulator() {
   const [tokensLeft, setTokensLeft] = useState(TOKEN_BUDGET);
   const [cooldownEndsAt, setCooldownEndsAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [question, setQuestion] = useState("");
-  const [chatReplies, setChatReplies] = useState<ChatReply[]>([]);
+  const [draft, setDraft] = useState("");
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const messageCounter = useRef(0);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
   const t = copy[lang];
+  const study = caseStudy[lang];
   const currentSteps = paths[lang];
   const step = currentSteps[activeStep];
 
@@ -566,6 +405,8 @@ export default function MediaSeedingSimulator() {
   useEffect(() => {
     getOrCreateUserId();
     const snapshot = getTokenSnapshot();
+    // Hydrate the browser-only token budget after mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTokensLeft(snapshot.tokensLeft);
     setCooldownEndsAt(snapshot.cooldownEndsAt);
   }, []);
@@ -587,6 +428,10 @@ export default function MediaSeedingSimulator() {
 
     return () => clearInterval(interval);
   }, [cooldownEndsAt]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [chatMessages]);
 
   function track(message: string) {
     const result = logInteraction(message);
@@ -615,48 +460,49 @@ export default function MediaSeedingSimulator() {
   }, [activeStep, boost, step.score]);
 
   function act(label: string, delta: number) {
-    track(label);
     setBoost((value) => Math.max(-10, Math.min(18, value + delta)));
+    sendChat(label);
   }
 
-  function nextStep() {
-    track(t.send);
+  function sendChat(text = draft) {
+    const cleanText = text.trim();
+    if (!cleanText || blocked) return;
+
+    track(cleanText);
+    const userMessage: ChatMessage = {
+      id: ++messageCounter.current,
+      role: "user",
+      text: cleanText,
+    };
+    const assistantMessage: ChatMessage = {
+      id: ++messageCounter.current,
+      role: "assistant",
+      text: createChatReply(
+        cleanText,
+        lang,
+        [...chatMessages].reverse().find((item) => item.role === "user")?.text,
+      ),
+    };
+
+    setChatMessages((messages) => [...messages, userMessage, assistantMessage]);
+    setDraft("");
     setActiveStep((value) => Math.min(currentSteps.length - 1, value + 1));
   }
 
   function reset() {
     setActiveStep(0);
     setBoost(0);
-    setQuestion("");
-    setChatReplies([]);
+    setDraft("");
+    setChatMessages([]);
   }
 
   function switchLanguage(nextLang: Lang) {
     setLang(nextLang);
-    setQuestion("");
-    setChatReplies([]);
+    setDraft("");
+    setChatMessages([]);
   }
 
-  function askQuestion(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const cleaned = question.trim();
-    if (!cleaned || blocked) return;
-    track(cleaned);
-    setChatReplies((items) => {
-      const previousQuestion = items.at(-1)?.question;
-      return [
-        ...items,
-        {
-          id: `${Date.now()}`,
-          question: cleaned,
-          answer: retrieveKnowledgeAnswer(cleaned, lang, previousQuestion),
-        },
-      ];
-    });
-    setQuestion("");
-  }
-
-  const messages = [
+  const scriptedMessages = [
     { source: t.sources.quiz, kind: "quiz", text: step.messages.quiz },
     { source: t.sources.media, kind: "media", text: step.messages.media, image: step.image },
     { source: t.sources.social, kind: "social", text: step.messages.social },
@@ -672,7 +518,7 @@ export default function MediaSeedingSimulator() {
       </div>
 
       <header className="app-header" aria-label="Labubu experience chatbox">
-        <a className="brand" href="#">
+        <a className="brand" href="#top">
           <span className="brand-mark">L</span>
           <span>
             <strong>{t.brand}</strong>
@@ -689,6 +535,53 @@ export default function MediaSeedingSimulator() {
           <button className="reset-button" onClick={reset} type="button">{t.reset}</button>
         </div>
       </header>
+
+      <section className="case-hero" id="top">
+        <div className="hero-copy">
+          <span className="case-eyebrow">{study.eyebrow}</span>
+          <h1>{study.heroTitle}</h1>
+          <p>{study.heroBody}</p>
+          <div className="hero-actions">
+            <a className="primary-link" href="#prototype">{study.primaryCta}</a>
+            <a className="secondary-link" href="#case-study">{study.secondaryCta}</a>
+          </div>
+          <div className="process-line" aria-label={study.processLabel}>
+            {study.process.map((item, index) => (
+              <span key={item}><b>{String(index + 1).padStart(2, "0")}</b>{item}</span>
+            ))}
+          </div>
+        </div>
+        <div className="hero-visual">
+          <img src="/labubu/product-1.webp" alt="Labubu collectible character" />
+          <div className="hero-note">
+            <span>{study.contextTitle}</span>
+            <p>{study.contextBody}</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="case-intro" id="case-study">
+        <article className="case-card problem-card">
+          <span>01</span>
+          <h2>{study.problemTitle}</h2>
+          <p>{study.problemBody}</p>
+        </article>
+        <article className="case-card">
+          <span>02</span>
+          <h2>{study.audienceTitle}</h2>
+          <p>{study.audienceBody}</p>
+        </article>
+        <article className="case-card insight-card">
+          <span>03</span>
+          <h2>{study.insightTitle}</h2>
+          <p>{study.insightBody}</p>
+        </article>
+      </section>
+
+      <div className="section-kicker" id="prototype">
+        <span>{study.prototypeLabel}</span>
+        <h2>{t.chatTitle}</h2>
+      </div>
 
       <section className="chatbox-grid">
         <aside className="thread-panel">
@@ -730,7 +623,7 @@ export default function MediaSeedingSimulator() {
           </div>
 
           <div className="message-stream">
-            {messages.map((message, index) => (
+            {scriptedMessages.map((message, index) => (
               <article className={`message-row ${message.kind}`} key={message.source}>
                 <div className="avatar">{message.source.slice(0, 1)}</div>
                 <div className="message-bubble">
@@ -743,28 +636,18 @@ export default function MediaSeedingSimulator() {
                 </div>
               </article>
             ))}
-            {chatReplies.map((reply) => (
-              <div className="knowledge-exchange" key={reply.id}>
-                <article className="message-row mind">
-                  <div className="avatar">U</div>
-                  <div className="message-bubble">
-                    <div className="message-meta">
-                      <strong>{lang === "zh" ? "你的问题" : "Your question"}</strong>
-                    </div>
-                    <p>{reply.question}</p>
+            {chatMessages.map((message) => (
+              <article className={`message-row conversation ${message.role}`} key={message.id}>
+                <div className="avatar">{message.role === "user" ? t.you.slice(0, 1) : "L"}</div>
+                <div className="message-bubble">
+                  <div className="message-meta">
+                    <strong>{message.role === "user" ? t.you : t.assistant}</strong>
                   </div>
-                </article>
-                <article className="message-row system">
-                  <div className="avatar">L</div>
-                  <div className="message-bubble">
-                    <div className="message-meta">
-                      <strong>{t.knowledgeTitle}</strong>
-                    </div>
-                    <p>{reply.answer}</p>
-                  </div>
-                </article>
-              </div>
+                  <p>{message.text}</p>
+                </div>
+              </article>
             ))}
+            <div ref={chatEndRef} />
           </div>
 
           <div className="quick-actions">
@@ -792,20 +675,23 @@ export default function MediaSeedingSimulator() {
             </p>
           ) : null}
 
-          <form className="composer" onSubmit={askQuestion}>
+          <form
+            className="composer"
+            onSubmit={(event) => {
+              event.preventDefault();
+              sendChat();
+            }}
+          >
             <button type="button" onClick={() => setActiveStep((value) => Math.max(0, value - 1))}>←</button>
-            <label htmlFor="seed-input">{lang === "zh" ? "消息" : "message"}</label>
+            <label htmlFor="seed-input">message</label>
             <input
               id="seed-input"
-              onChange={(event) => setQuestion(event.target.value)}
-              placeholder={t.askPlaceholder}
-              value={question}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder={t.input}
+              value={draft}
             />
-            <button className="send-button" disabled={blocked || !question.trim()} type="submit">{t.askButton}</button>
+            <button className="send-button" disabled={blocked || !draft.trim()} type="submit">{t.send}</button>
           </form>
-          <button className="next-experience" disabled={blocked} onClick={nextStep} type="button">
-            {lang === "zh" ? "继续体验 →" : "Continue experience →"}
-          </button>
         </section>
 
         <aside className="dashboard-panel">
@@ -826,8 +712,268 @@ export default function MediaSeedingSimulator() {
           </div>
         </aside>
       </section>
+
+      <section className="case-outcomes">
+        <article>
+          <span>04</span>
+          <h2>{study.solutionTitle}</h2>
+          <p>{study.solutionBody}</p>
+        </article>
+        <article>
+          <span>05</span>
+          <h2>{study.marketTitle}</h2>
+          <p>{study.marketBody}</p>
+        </article>
+        <article>
+          <span>06</span>
+          <h2>{study.impactTitle}</h2>
+          <p>{study.impactBody}</p>
+        </article>
+        <article className="next-card">
+          <div>
+            <span>07</span>
+            <h2>{study.nextTitle}</h2>
+          </div>
+          <ol>
+            {study.nextItems.map((item) => <li key={item}>{item}</li>)}
+          </ol>
+        </article>
+      </section>
+
+      <footer className="case-footer">
+        <strong>LABUBU Experience Chatbox</strong>
+        <span>Social media → Desire → Reflective choice</span>
+      </footer>
     </main>
   );
+}
+
+type KnowledgeEntry = { question: string; answer: string };
+
+const STOP_WORDS = new Set([
+  "a", "an", "and", "are", "as", "at", "be", "can", "did", "do", "does",
+  "for", "from", "how", "i", "in", "is", "it", "labubu", "of", "on", "or",
+  "the", "this", "to", "was", "what", "when", "where", "which", "who", "why",
+  "with", "would", "you",
+]);
+
+function searchTerms(value: string): string[] {
+  const expanded = value
+    .replace(/谁创造|创作者|作者/g, " creator ")
+    .replace(/起源|来源|故事/g, " origin story ")
+    .replace(/盲盒/g, " blind box ")
+    .replace(/稀缺|限量|缺货/g, " scarcity limited ")
+    .replace(/转售|二手|炒价/g, " resale price ")
+    .replace(/假货|仿品/g, " counterfeit fake ")
+    .replace(/明星|名人/g, " celebrity ")
+    .replace(/丽莎/g, " Lisa ")
+    .replace(/时尚|穿搭/g, " fashion style ")
+    .replace(/上瘾|心理/g, " psychology reinforcement ")
+    .replace(/过度消费|浪费/g, " overconsumption waste ");
+
+  return expanded
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 1 && !STOP_WORDS.has(word));
+}
+
+function retrieveKnowledge(
+  message: string,
+  previousMessage?: string,
+): { entry: KnowledgeEntry; continued: boolean } | null {
+  const continued = searchTerms(message).length <= 2 && Boolean(previousMessage);
+  const query = continued ? `${previousMessage} ${message}` : message;
+  const queryTerms = new Set(searchTerms(query));
+  let best: KnowledgeEntry | null = null;
+  let bestScore = 0;
+
+  for (const entry of knowledgeBase as KnowledgeEntry[]) {
+    const overlap = searchTerms(entry.question).reduce(
+      (score, word) => score + (queryTerms.has(word) ? 1 : 0),
+      0,
+    );
+    const exactBonus =
+      entry.question.toLowerCase().includes(query.toLowerCase())
+      || query.toLowerCase().includes(entry.question.toLowerCase())
+        ? 3
+        : 0;
+    const score = overlap + exactBonus;
+    if (score > bestScore) {
+      best = entry;
+      bestScore = score;
+    }
+  }
+
+  return best && bestScore > 0 ? { entry: best, continued } : null;
+}
+
+function humanKnowledgeReply(
+  match: { entry: KnowledgeEntry; continued: boolean },
+  message: string,
+  lang: Lang,
+): string {
+  const score = [...message].reduce((total, char) => total + char.charCodeAt(0), 0);
+  const openings = lang === "zh"
+    ? match.continued
+      ? ["对，顺着刚才的话题来说，", "这个追问很关键。", "继续刚才那一点，"]
+      : ["简单来说，", "这是个很好的问题。", "这里最关键的是："]
+    : match.continued
+      ? ["Yes—and building on that, ", "That connects directly to the last point. ", "Good follow-up. "]
+      : ["Short answer: ", "The key idea is this: ", "A useful way to see it is: "];
+  const topic = match.entry.question.toLowerCase();
+  const followUp = topic.includes("blind") || topic.includes("secret")
+    ? lang === "zh"
+      ? "你想继续了解盲盒为什么容易让人重复购买吗？"
+      : "Want to look at why a blind-box reveal can lead to repeat buying?"
+    : topic.includes("celebr") || topic.includes("lisa")
+      ? lang === "zh"
+        ? "你想再看看 Lisa 和其他明星怎样放大这股热潮吗？"
+        : "Want to explore how Lisa and other celebrities amplified the trend?"
+      : topic.includes("scar") || topic.includes("resale") || topic.includes("fake")
+        ? lang === "zh"
+          ? "要不要接着聊稀缺、转售和假货之间的关系？"
+          : "Would you like to connect this to scarcity, resale prices, and counterfeits?"
+        : lang === "zh"
+          ? "你想从历史、设计，还是收藏心理继续了解？"
+          : "Would you like to go deeper into its history, design, or collector psychology?";
+
+  return `${openings[score % openings.length]}${match.entry.answer}\n\n${followUp}`;
+}
+
+function adaptiveConversationReply(
+  message: string,
+  lang: Lang,
+  previousMessage?: string,
+): string | null {
+  const current = message.toLowerCase();
+  const context = `${previousMessage ?? ""} ${message}`.toLowerCase();
+  const saysNo = /不想|不要|不需要|没兴趣|不喜欢|算了|观望|拒绝|停一下|冷静|not|don't|do not|no |avoid|pass|skip|unsure|wait/.test(current);
+  const saysWant = /想要|想买|喜欢|要买|心动|加入|收藏|跟上|落下|怕错过|want|buy|like|own|join|miss out|left out|fomo/.test(current);
+  const social = /朋友|大家|别人|同学|身边|话题|圈子|群体|社群|跟风|落下|everyone|friend|friends|peer|group|community|trend|left out|conversation/.test(context);
+  const budget = /钱|价格|贵|预算|花费|省钱|price|expensive|budget|cost|money|spend/.test(context);
+  const cute = /可爱|治愈|开心|压力|情绪|怪萌|cute|comfort|stress|happy|mood|ugly-cute|weird/.test(context);
+  const rare = /隐藏|稀有|限量|缺货|抽中|错过|rare|secret|limited|sold out|low stock|miss/.test(context);
+  const fake = /假|仿|真假|counterfeit|fake|lafufu/.test(context);
+  const style = /穿搭|包|风格|搭配|审美|fashion|style|bag|outfit|aesthetic/.test(context);
+  const origin = /谁|创作|起源|来源|故事|creator|created|origin|story|history/.test(context);
+
+  if (social && saysNo) {
+    return lang === "zh"
+      ? "你这个回答不是简单的“想买”，而是在识别社交压力。当你说“不想被朋友的话题落下”时，Labubu 更像一个加入讨论的信号。\n\n可以先问自己：如果朋友明天不聊 Labubu 了，我还会想拥有它吗？"
+      : "That answer is not simple desire; it is noticing social pressure. When you say you do not want to be left out of your friends' conversation, Labubu is acting like a ticket into the discussion.\n\nAsk yourself: if your friends stopped talking about Labubu tomorrow, would you still want one?";
+  }
+
+  if (social && saysWant) {
+    return lang === "zh"
+      ? "这更像社会认同在起作用：当身边的人都拥有或讨论 Labubu 时，它会变成加入群体的信号，而不只是一个玩具。\n\n下一步可以区分两件事：你是喜欢 Labubu 本身，还是更想参与朋友之间的话题？"
+      : "That sounds like social proof at work: when people around you own or discuss Labubu, it becomes a signal of belonging, not just a toy.\n\nThe next distinction is whether you like Labubu itself, or whether you mainly want to join the conversation around it.";
+  }
+
+  if (budget) {
+    return lang === "zh"
+      ? "你的回答已经转向理性决策了。Labubu 的风险不一定是单个价格，而是盲盒、配件、重复款和转售价格叠加后的总花费。\n\n更稳的做法是先设一个上限：如果超过这个预算，就把它当作内容兴趣，而不是购买计划。"
+      : "Your answer moves the conversation toward a more rational decision. The risk with Labubu is often not one single price, but the total cost of blind boxes, accessories, duplicates, and resale markups.\n\nA stronger choice is to set a limit first: past that budget, treat it as content interest rather than a purchase plan.";
+  }
+
+  if (rare) {
+    return lang === "zh"
+      ? "你提到的是稀缺感触发：隐藏款、限量和缺货会让人感觉机会正在消失。这个机制会提高兴趣，但不一定说明你真的需要它。\n\n可以先暂停一下：你想要的是这个具体款式，还是“抽中稀有款”的刺激？"
+      : "You are pointing to a scarcity trigger: secret editions, limited releases, and low-stock signals make the opportunity feel like it is disappearing. That can raise desire without proving you truly need it.\n\nPause on this: do you want this specific design, or the thrill of getting something rare?";
+  }
+
+  if (fake) {
+    return lang === "zh"
+      ? "这类担心很实际。越热门、越难买的款式，越容易出现仿品和真假争议；只靠一个外观细节通常不够可靠。\n\n如果你还在犹豫，可以把“能否确认来源”作为是否购买的第一条件。"
+      : "That concern is practical. The more popular and scarce a release becomes, the more likely counterfeits and authenticity disputes appear; one visual clue is usually not enough.\n\nIf you are unsure, make source verification the first condition before buying.";
+  }
+
+  if (style) {
+    return lang === "zh"
+      ? "你的回答偏向身份表达：Labubu 在这里不是普通玩具，而是包挂、穿搭和审美标签的一部分。\n\n可以继续想：它是否真的适合你的风格，还是只是因为你最近频繁看到别人这样搭配？"
+      : "Your answer leans toward identity expression: Labubu is acting less like a normal toy and more like a bag charm, styling cue, or aesthetic label.\n\nThe useful question is whether it genuinely fits your style, or whether you are responding to seeing the same styling repeatedly.";
+  }
+
+  if (cute) {
+    return lang === "zh"
+      ? "这说明情绪价值在起作用。可爱、怪萌、治愈和缓解压力的内容，会让 Labubu 先和心情绑定，再和购买绑定。\n\n这不一定是坏事，但你可以分清楚：我是现在需要一点安慰，还是长期真的想收藏？"
+      : "That shows emotional value is driving the response. Cute, ugly-cute, or comforting content connects Labubu to mood first, and buying second.\n\nThat is not automatically bad, but it helps to separate the two: do you need comfort right now, or do you genuinely want to collect it long term?";
+  }
+
+  if (origin) {
+    return lang === "zh"
+      ? "你问的是背景线索。Labubu 原本来自艺术家龙家升的《The Monsters》故事世界，后来通过 Pop Mart 的授权和盲盒体系进入大众收藏市场。\n\n所以它的吸引力同时来自角色故事、设计风格和商业传播。"
+      : "You are asking about background. Labubu began in artist Kasing Leung's The Monsters story world, then reached a mass collecting audience through Pop Mart licensing and blind-box distribution.\n\nSo its appeal comes from character lore, visual design, and commercial media circulation at the same time.";
+  }
+
+  if (saysNo) {
+    return lang === "zh"
+      ? "你的回答是在给冲动降温。这里最重要的不是立刻判断“买不买”，而是看清是哪一种内容影响了你：情绪、身份、社群，还是稀缺感。\n\n如果你已经在观望，说明你正在把欲望重新拉回选择权。"
+      : "Your answer is cooling down the impulse. The key is not to decide immediately whether to buy, but to identify what influenced you: emotion, identity, community, or scarcity.\n\nIf you are already waiting, you are moving the decision back into your own control.";
+  }
+
+  if (saysWant) {
+    return lang === "zh"
+      ? "你表达的是兴趣上升。下一步不要只问“我想不想要”，而要问“我为什么现在更想要”：是因为它可爱、适合我的风格、朋友也在聊，还是因为担心之后买不到？"
+      : "You are describing rising interest. The next step is not only asking whether you want it, but why you want it more now: because it is cute, fits your style, your friends are discussing it, or you worry it may disappear later.";
+  }
+
+  return null;
+}
+
+function createChatReply(
+  message: string,
+  lang: Lang,
+  previousMessage?: string,
+): string {
+  if (!LABUBU_SYSTEM_PROMPT.startsWith("You are the LABUBU Media Literacy Guide")) {
+    throw new Error("The Labubu conversational system prompt is not configured.");
+  }
+
+  const normalized = message.toLowerCase();
+  const includesAny = (...terms: string[]) => terms.some((term) => normalized.includes(term));
+  const adaptiveReply = adaptiveConversationReply(message, lang, previousMessage);
+  if (adaptiveReply) return adaptiveReply;
+
+  const knowledgeMatch = retrieveKnowledge(message, previousMessage);
+
+  if (knowledgeMatch) {
+    return humanKnowledgeReply(knowledgeMatch, message, lang);
+  }
+
+  if (includesAny("贵", "价格", "price", "expensive", "cost")) {
+    return lang === "zh"
+      ? "价格没有消除你的兴趣，说明吸引力可能已经从“值不值”转向了情绪或身份价值。试着问自己：如果它明天仍然有货、也没人看到，我还会想要吗？"
+      : "Price has not removed the desire, which suggests the appeal may have shifted from value-for-money to emotional or identity value. Ask yourself: if it were still available tomorrow and nobody saw it, would I still want it?";
+  }
+
+  if (includesAny("朋友", "大家", "都有", "friends", "everyone", "all have")) {
+    return lang === "zh"
+      ? "这很像社会认同：当身边的人都拥有它时，Labubu 也会变成一种加入群体的信号。你更在意玩具本身，还是不想被朋友的话题落下？"
+      : "That sounds like social proof: when people around you own one, Labubu can become a signal of belonging. Are you more drawn to the object itself, or to not being left out of the conversation?";
+  }
+
+  if (includesAny("限量", "缺货", "错过", "抢不到", "limited", "sell out", "miss", "fomo")) {
+    return lang === "zh"
+      ? "稀缺提示会把“我喜欢吗？”悄悄换成“我会不会错过？”。先把决定延迟十分钟，再写下三个不依赖稀缺性的喜欢理由；如果写不出来，FOMO 可能正在主导。"
+      : "Scarcity can quietly replace “Do I like it?” with “Will I miss it?” Delay the decision for ten minutes and name three reasons you like it that do not depend on rarity. If that is difficult, FOMO may be leading.";
+  }
+
+  if (includesAny("丑", "可爱", "怪", "ugly", "cute", "weird", "keep looking")) {
+    return lang === "zh"
+      ? "“怪萌”会制造视觉张力：它不符合传统可爱标准，所以更容易让人停留、讨论并记住。反复出现后，陌生感也可能变成熟悉和喜欢。你第一次注意到它是在什么内容里？"
+      : "Ugly-cute design creates visual tension. Because it breaks conventional cuteness, it is easier to notice, discuss, and remember. Repetition can then turn unfamiliarity into liking. Where did you first notice it?";
+  }
+
+  if (includesAny("买", "想要", "喜欢", "want", "buy", "like")) {
+    return lang === "zh"
+      ? "想要并不等于被操控，但值得找到欲望的起点。回想一下：最先影响你的是开箱视频、朋友、穿搭图片、角色故事，还是限量信息？"
+      : "Wanting something does not automatically mean you were manipulated, but it helps to locate the starting point. Was it an unboxing, a friend, a styling image, the character story, or scarcity information?";
+  }
+
+  return lang === "zh"
+    ? "我听到的是一种真实但还没有被拆开的吸引力。试着完成这句话：“即使没有人知道我拥有它，我仍然喜欢它，因为……”你的答案能帮助区分个人偏好、身份表达和社交压力。"
+    : "I hear a real attraction that has not yet been unpacked. Complete this sentence: “Even if nobody knew I owned it, I would still like it because…” Your answer can help separate personal taste, identity expression, and social pressure.";
 }
 
 function formatCountdown(ms: number): string {
