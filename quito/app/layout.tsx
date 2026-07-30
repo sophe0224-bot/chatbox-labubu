@@ -13,15 +13,15 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "LABUBU Experience Chatbox",
+  title: "LABUBU Experience Chatbox GitHub",
   description: "A bilingual Labubu-style chatbox experience for personality, identity, social proof, FOMO, and media literacy.",
   openGraph: {
-    title: "LABUBU Experience Chatbox",
+    title: "LABUBU Experience Chatbox GitHub",
     description: "A chatbox interface that shows why a viewer becomes more interested in Labubu through media.",
   },
   twitter: {
     card: "summary",
-    title: "LABUBU Experience Chatbox",
+    title: "LABUBU Experience Chatbox GitHub",
     description: "A chatbox interface that shows why a viewer becomes more interested in Labubu through media.",
   },
   icons: {

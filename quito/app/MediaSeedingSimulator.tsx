@@ -9,7 +9,7 @@ type Lang = "zh" | "en";
 const copy = {
   zh: {
     stripB: "从内容吸引到身份认同，再到理性选择",
-    brand: "LABUBU 体验 Chatbox",
+    brand: "LABUBU 体验 Chatbox GitHub",
     brandSub: "media desire lab",
     language: "语言",
     reset: "重置",
@@ -48,7 +48,7 @@ const copy = {
   },
   en: {
     stripB: "From content attraction to identity fit, then reflective choice",
-    brand: "LABUBU Experience Chatbox",
+    brand: "LABUBU Experience Chatbox GitHub",
     brandSub: "media desire lab",
     language: "Language",
     reset: "Reset",
