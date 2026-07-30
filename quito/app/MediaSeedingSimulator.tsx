@@ -402,7 +402,9 @@ export default function MediaSeedingSimulator() {
 
       <header className="app-header" aria-label="Labubu experience chatbox">
         <a className="brand" href="#">
-          <span className="brand-mark">W8</span>
+          <span className="brand-mark">
+            <img src="/w8-logo.png" alt="W8 logo" />
+          </span>
           <span>
             <strong>{t.brand}</strong>
             <small>{t.brandSub}</small>
