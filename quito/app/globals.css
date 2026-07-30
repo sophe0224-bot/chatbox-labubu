@@ -110,7 +110,9 @@ img {
   border-radius: 50%;
   background: linear-gradient(135deg, var(--pink), var(--yellow));
   color: var(--ink);
+  font-size: 17px;
   font-weight: 900;
+  line-height: 1;
   box-shadow: 3px 3px 0 var(--shadow);
 }
 

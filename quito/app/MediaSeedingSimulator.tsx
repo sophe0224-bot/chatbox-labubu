@@ -402,7 +402,7 @@ export default function MediaSeedingSimulator() {
 
       <header className="app-header" aria-label="Labubu experience chatbox">
         <a className="brand" href="#">
-          <span className="brand-mark">L</span>
+          <span className="brand-mark">W8</span>
           <span>
             <strong>{t.brand}</strong>
             <small>{t.brandSub}</small>
