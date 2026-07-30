@@ -125,7 +125,7 @@ function humanizeAnswer(
 const copy = {
   zh: {
     stripB: "从内容吸引到身份认同，再到理性选择",
-    brand: "LABUBU 体验 Chatbox",
+    brand: "LABUBU 体验 Chatbox GitHub",
     brandSub: "media desire lab",
     language: "语言",
     reset: "重置",
@@ -166,7 +166,7 @@ const copy = {
   },
   en: {
     stripB: "From content attraction to identity fit, then reflective choice",
-    brand: "LABUBU Experience Chatbox",
+    brand: "LABUBU Experience Chatbox GitHub",
     brandSub: "media desire lab",
     language: "Language",
     reset: "Reset",
@@ -546,7 +546,9 @@ export default function MediaSeedingSimulator() {
 
       <header className="app-header" aria-label="Labubu experience chatbox">
         <a className="brand" href="#">
-          <span className="brand-mark">L</span>
+          <span className="brand-mark">
+            <img src="/w8-logo.png" alt="W8 logo" />
+          </span>
           <span>
             <strong>{t.brand}</strong>
             <small>{t.brandSub}</small>
